@@ -21,7 +21,7 @@ namespace thunderpeak_receiver
         {
             log.LogInformation("Http POST received");
 
-            // Extract the HTTP payload, convert to base 64, and create a DTO for transporting it across the Azure workflow
+            // Extract the HTTP payload, convert to base 64, and create a 'Message' DTO for transporting the data across the Azure workflow
             string requestBody = await new StreamReader(request.Body).ReadToEndAsync();
             byte[] requestBodyBytes = System.Text.Encoding.UTF8.GetBytes(requestBody);
             string base64content = System.Convert.ToBase64String(requestBodyBytes);
@@ -57,7 +57,16 @@ namespace thunderpeak_receiver
             var updatedMessage =
                 await context.CallActivityAsync<Message>(nameof(ProcessMessageActivities.A_StoreRawMessage), message);
             var ecr =
-                await context.CallActivityAsync<Case>(nameof(ProcessMessageActivities.A_FormatMessage), updatedMessage);
+                await context.CallActivityAsync<string>(nameof(ProcessMessageActivities.A_FormatMessage), updatedMessage);
+
+            MessageEcrPair messageEcrPair = new MessageEcrPair()
+            {
+                Message = updatedMessage,
+                Ecr = ecr
+            };
+
+            var transform =
+                await context.CallActivityAsync<string>(nameof(ProcessMessageActivities.A_FlattenMessage), messageEcrPair);
             //var formattedStorageLocation =
             //    await context.CallActivityAsync<string>("A_FormatMessage", message);
 
@@ -68,7 +77,5 @@ namespace thunderpeak_receiver
                 //Formatted = formattedStorageLocation
             };
         }
-
-        
     }
 }
