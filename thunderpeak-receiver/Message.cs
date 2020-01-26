@@ -30,10 +30,10 @@ namespace thunderpeak_receiver
         {
             return ContentFormat switch
             {
-                ContentFormat.Json => ".json",
-                ContentFormat.Xml => ".xml",
-                ContentFormat.Hl7v251 => ".hl7",
-                _ => ".txt"
+                ContentFormat.Json => "json",
+                ContentFormat.Xml => "xml",
+                ContentFormat.Hl7v251 => "hl7",
+                _ => "txt"
             };
         }
     }
