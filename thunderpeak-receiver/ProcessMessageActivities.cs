@@ -100,7 +100,7 @@ namespace thunderpeak_receiver
             SetBlobMetadata(outputBlob, message);
             outputBlob.Properties.ContentType = "application/json";
 
-            Case ecr = new Case();
+            Bundle ecr = new Bundle();
 
             FhirJsonSerializer fhirJsonSerializer = new FhirJsonSerializer();
             fhirJsonSerializer.Settings.Pretty = true;
@@ -108,15 +108,15 @@ namespace thunderpeak_receiver
             if (message.ContentFormat == ContentFormat.Hl7v251)
             {
                 // if in HL7v2 format, convert to FHIR format using our special v2-to-FHIR format converter
-                Cdc.Surveillance.Converters.FhirConverter converter = new Cdc.Surveillance.Converters.FhirConverter();
-                ecr = converter.Convert(content);
+                Cdc.Surveillance.Converters.EcrFhirConverter converter = new Cdc.Surveillance.Converters.EcrFhirConverter();
+                ecr = converter.Convert(content, message.Id.ToString());
             }
             else if (message.ContentFormat == ContentFormat.Json)
             {
                 // if it's already in FHIR, we may not need to do anything, but let's try and do a basic validation on it by parsing it... TODO see if we really need to do anything here at all, can we just drop it into storage?
                 FhirJsonParser parser = new FhirJsonParser();
                 parser.Settings.PermissiveParsing = true;
-                ecr = parser.Parse<Case>(content);
+                ecr = parser.Parse<Bundle>(content);
             }
 
             string fhirContent = fhirJsonSerializer.SerializeToString(ecr);
@@ -187,37 +187,59 @@ namespace thunderpeak_receiver
 
         private static string TransformJson(string json)
         {
+
             string transformDocument = @"
 {
-    ""profile"": ""#valueof($.identifier[?(@.use=='official')].value)"",
-    ""legacyCaseId"": ""#valueof($.identifier[?(@.use=='old')].value)"",
-    ""patient.gender"": ""#valueof($.patient.gender)"",
-    ""patient.birthDate"": ""#valueof($.patient.birthDate)"",
-    ""patient.deceasedDateTime"": ""#valueof($.patient.deceasedDateTime)"",
-    ""patient.address.city"": ""#ifcondition(#exists($.patient.address[0]),true,#valueof($.patient.address[0].city))"",
-    ""patient.address.county"": ""#ifcondition(#exists($.patient.address[0]),true,#valueof($.patient.address[0].district))"",
-    ""patient.address.state"": ""#ifcondition(#exists($.patient.address[0]),true,#valueof($.patient.address[0].state))"",
-    ""patient.address.zip"": ""#ifcondition(#exists($.patient.address[0]),true,#valueof($.patient.address[0].postalCode))"",
-    ""patient.address.country"": ""#ifcondition(#exists($.patient.address[0]),true,#valueof($.patient.address[0].country))"",
+    ""profile"": ""#valueof($.id)"",
+    ""patient.identifier"": ""#valueof($.entry[?(@.resource.resourceType=='Patient')].resource.identifier[0].value)"",
+    ""patient.gender"": ""#valueof($.entry[?(@.resource.resourceType=='Patient')].resource.gender)"",
+    ""patient.birthDate"": ""#valueof($.entry[?(@.resource.resourceType=='Patient')].resource.birthDate)"",
+    ""patient.deceasedDateTime"": ""#valueof($.entry[?(@.resource.resourceType=='Patient')].resource.deceasedDateTime)"",
     
-    ""exposureAddress.city"": ""#ifcondition(#exists($.exposureAddress[0]),true,#valueof($.exposureAddress[0].city))"",
-    ""exposureAddress.county"": ""#ifcondition(#exists($.exposureAddress[0]),true,#valueof($.exposureAddress[0].district))"",
-    ""exposureAddress.state"": ""#ifcondition(#exists($.exposureAddress[0]),true,#valueof($.exposureAddress[0].state))"",
-    ""exposureAddress.zip"": ""#ifcondition(#exists($.exposureAddress[0]),true,#valueof($.exposureAddress[0].postalCode))"",
-    ""exposureAddress.country"": ""#ifcondition(#exists($.exposureAddress[0]),true,#valueof($.exposureAddress[0].country))"",
+    ""patient.address.city"": ""#ifcondition(#exists( $.entry[?(@.resource.resourceType=='Patient')].resource.address[0] ),true,#valueof($.entry[?(@.resource.resourceType=='Patient')].resource.address[0].city))"",
+    ""patient.address.county"": ""#ifcondition(#exists( $.entry[?(@.resource.resourceType=='Patient')].resource.address[0] ),true,#valueof($.entry[?(@.resource.resourceType=='Patient')].resource.address[0].district))"",
+    ""patient.address.state"": ""#ifcondition(#exists( $.entry[?(@.resource.resourceType=='Patient')].resource.address[0] ),true,#valueof($.entry[?(@.resource.resourceType=='Patient')].resource.address[0].state))"",
+    ""patient.address.postalCode"": ""#ifcondition(#exists( $.entry[?(@.resource.resourceType=='Patient')].resource.address[0] ),true,#valueof($.entry[?(@.resource.resourceType=='Patient')].resource.address[0].postalCode))"",
+    ""patient.address.country"": ""#ifcondition(#exists( $.entry[?(@.resource.resourceType=='Patient')].resource.address[0] ),true,#valueof($.entry[?(@.resource.resourceType=='Patient')].resource.address[0].country))"",
 
-    ""importedAddress.city"": ""#ifcondition(#exists($.importedAddress[0]),true,#valueof($.importedAddress[0].city))"",
-    ""importedAddress.county"": ""#ifcondition(#exists($.importedAddress[0]),true,#valueof($.importedAddress[0].district))"",
-    ""importedAddress.state"": ""#ifcondition(#exists($.importedAddress[0]),true,#valueof($.importedAddress[0].state))"",
-    ""importedAddress.zip"": ""#ifcondition(#exists($.importedAddress[0]),true,#valueof($.importedAddress[0].postalCode))"",
-    ""importedAddress.country"": ""#ifcondition(#exists($.importedAddress[0]),true,#valueof($.importedAddress[0].country))"",
+    ""patient.ethnicity"": ""#ifcondition(#exists($.entry[?(@.resource.resourceType=='Patient')].resource.extension[?(@.url=='http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity')]),true, #valueof($.entry[?(@.resource.resourceType=='Patient')].resource.extension[?(@.url=='http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity')].extension[0].valueCoding.display) )"",
+    ""patient.ethnicityCode"": ""#ifcondition(#exists($.entry[?(@.resource.resourceType=='Patient')].resource.extension[?(@.url=='http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity')]),true, #valueof($.entry[?(@.resource.resourceType=='Patient')].resource.extension[?(@.url=='http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity')].extension[0].valueCoding.code) )"",
 
-    ""transmissionMode"": ""#ifcondition(#exists($.transmissionMode),true,#valueof($.transmissionMode.text))"",
-    ""outbreak"": ""#ifcondition(#exists($.outbreak),true,#valueof($.outbreak))"",
-    ""resultStatus"": ""#ifcondition(#exists($.resultStatus),true,#valueof($.resultStatus))"",
-    ""importedIndicator"": ""#ifcondition(#exists($.importedIndicator),true,#valueof($.importedIndicator.text))"",
-    ""multinationalReportingCriteria"": ""#ifcondition(#exists($.multinationalReportingCriteria),true,#valueof($.multinationalReportingCriteria.text))"",
+    ""patient.race"": ""#ifcondition(#exists($.entry[?(@.resource.resourceType=='Patient')].resource.extension[?(@.url=='http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')]),true, #valueof($.entry[?(@.resource.resourceType=='Patient')].resource.extension[?(@.url=='http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')].extension[0].valueCoding.display) )"",
+    ""patient.raceCode"": ""#ifcondition(#exists($.entry[?(@.resource.resourceType=='Patient')].resource.extension[?(@.url=='http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')]),true, #valueof($.entry[?(@.resource.resourceType=='Patient')].resource.extension[?(@.url=='http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')].extension[0].valueCoding.code) )"",
 }";
+
+            //            string transformDocument = @"
+            //{
+            //    ""profile"": ""#valueof($.identifier[?(@.use=='official')].value)"",
+            //    ""legacyCaseId"": ""#valueof($.identifier[?(@.use=='old')].value)"",
+            //    ""patient.gender"": ""#valueof($..patient.gender)"",
+            //    ""patient.birthDate"": ""#valueof($.patient.birthDate)"",
+            //    ""patient.deceasedDateTime"": ""#valueof($.patient.deceasedDateTime)"",
+            //    ""patient.address.city"": ""#ifcondition(#exists($.patient.address[0]),true,#valueof($.patient.address[0].city))"",
+            //    ""patient.address.county"": ""#ifcondition(#exists($.patient.address[0]),true,#valueof($.patient.address[0].district))"",
+            //    ""patient.address.state"": ""#ifcondition(#exists($.patient.address[0]),true,#valueof($.patient.address[0].state))"",
+            //    ""patient.address.zip"": ""#ifcondition(#exists($.patient.address[0]),true,#valueof($.patient.address[0].postalCode))"",
+            //    ""patient.address.country"": ""#ifcondition(#exists($.patient.address[0]),true,#valueof($.patient.address[0].country))"",
+
+            //    ""exposureAddress.city"": ""#ifcondition(#exists($.exposureAddress[0]),true,#valueof($.exposureAddress[0].city))"",
+            //    ""exposureAddress.county"": ""#ifcondition(#exists($.exposureAddress[0]),true,#valueof($.exposureAddress[0].district))"",
+            //    ""exposureAddress.state"": ""#ifcondition(#exists($.exposureAddress[0]),true,#valueof($.exposureAddress[0].state))"",
+            //    ""exposureAddress.zip"": ""#ifcondition(#exists($.exposureAddress[0]),true,#valueof($.exposureAddress[0].postalCode))"",
+            //    ""exposureAddress.country"": ""#ifcondition(#exists($.exposureAddress[0]),true,#valueof($.exposureAddress[0].country))"",
+
+            //    ""importedAddress.city"": ""#ifcondition(#exists($.importedAddress[0]),true,#valueof($.importedAddress[0].city))"",
+            //    ""importedAddress.county"": ""#ifcondition(#exists($.importedAddress[0]),true,#valueof($.importedAddress[0].district))"",
+            //    ""importedAddress.state"": ""#ifcondition(#exists($.importedAddress[0]),true,#valueof($.importedAddress[0].state))"",
+            //    ""importedAddress.zip"": ""#ifcondition(#exists($.importedAddress[0]),true,#valueof($.importedAddress[0].postalCode))"",
+            //    ""importedAddress.country"": ""#ifcondition(#exists($.importedAddress[0]),true,#valueof($.importedAddress[0].country))"",
+
+            //    ""transmissionMode"": ""#ifcondition(#exists($.transmissionMode),true,#valueof($.transmissionMode.text))"",
+            //    ""outbreak"": ""#ifcondition(#exists($.outbreak),true,#valueof($.outbreak))"",
+            //    ""resultStatus"": ""#ifcondition(#exists($.resultStatus),true,#valueof($.resultStatus))"",
+            //    ""importedIndicator"": ""#ifcondition(#exists($.importedIndicator),true,#valueof($.importedIndicator.text))"",
+            //    ""multinationalReportingCriteria"": ""#ifcondition(#exists($.multinationalReportingCriteria),true,#valueof($.multinationalReportingCriteria.text))"",
+            //}";
 
             string transformedString = JsonTransformer.Transform(transformDocument, json);
 
