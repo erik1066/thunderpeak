@@ -26,29 +26,29 @@ namespace Cdc.Surveillance.Converters
                 Code = new CodeableConcept()
                 {
                     Coding = new List<Coding>()
+                    {
+                        new Coding
                         {
-                            new Coding
-                            {
-                                Code = segment.Fields(3).Components(1).Value,
-                                Display = segment.Fields(3).Components(2).Value,
-                                System = thunderpeak_receiver.Common.ConvertCodeSystemString(obx3codeSystem),
-                                Extension = new List<Extension>() {
-                                    new Extension()
-                                    {
-                                        Value = new FhirString(obx3codeSystem)
-                                    }
+                            Code = segment.Fields(3).Components(1).Value,
+                            Display = segment.Fields(3).Components(2).Value,
+                            System = thunderpeak_receiver.Common.ConvertCodeSystemString(obx3codeSystem),
+                            Extension = new List<Extension>() {
+                                new Extension()
+                                {
+                                    Value = new FhirString(obx3codeSystem)
                                 }
                             }
                         }
+                    }
                 },
                 Subject = new ResourceReference("TODO: Create reference to the patient here"),
                 Identifier = new List<Identifier>()
+                {
+                    new Identifier()
                     {
-                        new Identifier()
-                        {
-                            Value = segment.Fields(3).Components(1).Value
-                        }
+                        Value = segment.Fields(3).Components(1).Value
                     }
+                }
             };
 
             if (segment.GetAllFields().Count >= 20 && !string.IsNullOrWhiteSpace(segment.Fields(20).Value) && segment.Fields(20).Components().Count >= 3)

@@ -84,10 +84,7 @@ namespace Cdc.Surveillance.Converters
 
                 entry1.Resource = composition;
                 bundle.Entry.Add(entry1);
-
             }
-
-            
 
             // add the patient resource
             {

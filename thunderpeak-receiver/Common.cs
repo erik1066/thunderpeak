@@ -34,6 +34,8 @@ namespace thunderpeak_receiver
                     return "http://snomed.info/sct";
                 case "LN":
                     return "http://loinc.org";
+                case "UCUM":
+                    return "http://unitsofmeasure.org";
                 default:
                     return system;
             }
