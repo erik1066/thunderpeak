@@ -54,8 +54,8 @@ namespace thunderpeak_receiver
 
             log.LogInformation($"Message DTO updated successfully. ID = {message.Id.ToString()}");
 
-            var outputBlob = await binder.BindAsync<CloudBlockBlob>(
-                new BlobAttribute($"messages-raw/{message.Id.ToString()}.{message.GetPreferredFileExtension()}")
+            CloudBlockBlob outputBlob = await binder.BindAsync<CloudBlockBlob>(
+                new BlobAttribute($"messages-raw/{message.Id.ToString()}.txt")
                 {
                     Connection = "AzureWebJobsStorage"
                 });
@@ -71,6 +71,7 @@ namespace thunderpeak_receiver
             }
 
             log.LogInformation($"Message DTO stored. ID = {message.Id.ToString()}");
+
             return message;
         }
 
@@ -86,7 +87,7 @@ namespace thunderpeak_receiver
             IBinder binder,
             ILogger log)
         {
-            var message = context.GetInput<Message>();
+            Message message = context.GetInput<Message>();
 
             var base64EncodedContent = System.Convert.FromBase64String(message.Content);
             var content = System.Text.Encoding.UTF8.GetString(base64EncodedContent).Trim();
@@ -170,6 +171,21 @@ namespace thunderpeak_receiver
             return transformedJson;
         }
 
+        /// <summary>
+        /// Cleans up files/data from Azure Storage after a failed orchestration
+        /// </summary>
+        /// <param name="context">DurableActivityContext</param>
+        /// <param name="binder">Binder for Blob storage where the transformed Json will reside</param>
+        /// <param name="log">Logger</param>
+        /// <returns>TODO</returns>
+        [FunctionName(nameof(A_Cleanup))]
+        public static async System.Threading.Tasks.Task A_Cleanup([ActivityTrigger] IDurableActivityContext context,
+            IBinder binder,
+            ILogger log)
+        {
+            
+        }
+
         private static void SetBlobMetadata(CloudBlockBlob blob, Message message)
         {
             var base64EncodedContent = System.Convert.FromBase64String(message.Content);
@@ -208,39 +224,6 @@ namespace thunderpeak_receiver
     ""patient.race"": ""#ifcondition(#exists($.entry[?(@.resource.resourceType=='Patient')].resource.extension[?(@.url=='http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')]),true, #valueof($.entry[?(@.resource.resourceType=='Patient')].resource.extension[?(@.url=='http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')].extension[0].valueCoding.display) )"",
     ""patient.raceCode"": ""#ifcondition(#exists($.entry[?(@.resource.resourceType=='Patient')].resource.extension[?(@.url=='http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')]),true, #valueof($.entry[?(@.resource.resourceType=='Patient')].resource.extension[?(@.url=='http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')].extension[0].valueCoding.code) )"",
 }";
-
-            //            string transformDocument = @"
-            //{
-            //    ""profile"": ""#valueof($.identifier[?(@.use=='official')].value)"",
-            //    ""legacyCaseId"": ""#valueof($.identifier[?(@.use=='old')].value)"",
-            //    ""patient.gender"": ""#valueof($..patient.gender)"",
-            //    ""patient.birthDate"": ""#valueof($.patient.birthDate)"",
-            //    ""patient.deceasedDateTime"": ""#valueof($.patient.deceasedDateTime)"",
-            //    ""patient.address.city"": ""#ifcondition(#exists($.patient.address[0]),true,#valueof($.patient.address[0].city))"",
-            //    ""patient.address.county"": ""#ifcondition(#exists($.patient.address[0]),true,#valueof($.patient.address[0].district))"",
-            //    ""patient.address.state"": ""#ifcondition(#exists($.patient.address[0]),true,#valueof($.patient.address[0].state))"",
-            //    ""patient.address.zip"": ""#ifcondition(#exists($.patient.address[0]),true,#valueof($.patient.address[0].postalCode))"",
-            //    ""patient.address.country"": ""#ifcondition(#exists($.patient.address[0]),true,#valueof($.patient.address[0].country))"",
-
-            //    ""exposureAddress.city"": ""#ifcondition(#exists($.exposureAddress[0]),true,#valueof($.exposureAddress[0].city))"",
-            //    ""exposureAddress.county"": ""#ifcondition(#exists($.exposureAddress[0]),true,#valueof($.exposureAddress[0].district))"",
-            //    ""exposureAddress.state"": ""#ifcondition(#exists($.exposureAddress[0]),true,#valueof($.exposureAddress[0].state))"",
-            //    ""exposureAddress.zip"": ""#ifcondition(#exists($.exposureAddress[0]),true,#valueof($.exposureAddress[0].postalCode))"",
-            //    ""exposureAddress.country"": ""#ifcondition(#exists($.exposureAddress[0]),true,#valueof($.exposureAddress[0].country))"",
-
-            //    ""importedAddress.city"": ""#ifcondition(#exists($.importedAddress[0]),true,#valueof($.importedAddress[0].city))"",
-            //    ""importedAddress.county"": ""#ifcondition(#exists($.importedAddress[0]),true,#valueof($.importedAddress[0].district))"",
-            //    ""importedAddress.state"": ""#ifcondition(#exists($.importedAddress[0]),true,#valueof($.importedAddress[0].state))"",
-            //    ""importedAddress.zip"": ""#ifcondition(#exists($.importedAddress[0]),true,#valueof($.importedAddress[0].postalCode))"",
-            //    ""importedAddress.country"": ""#ifcondition(#exists($.importedAddress[0]),true,#valueof($.importedAddress[0].country))"",
-
-            //    ""transmissionMode"": ""#ifcondition(#exists($.transmissionMode),true,#valueof($.transmissionMode.text))"",
-            //    ""outbreak"": ""#ifcondition(#exists($.outbreak),true,#valueof($.outbreak))"",
-            //    ""resultStatus"": ""#ifcondition(#exists($.resultStatus),true,#valueof($.resultStatus))"",
-            //    ""importedIndicator"": ""#ifcondition(#exists($.importedIndicator),true,#valueof($.importedIndicator.text))"",
-            //    ""multinationalReportingCriteria"": ""#ifcondition(#exists($.multinationalReportingCriteria),true,#valueof($.multinationalReportingCriteria.text))"",
-            //}";
-
             string transformedString = JsonTransformer.Transform(transformDocument, json);
 
             return transformedString;

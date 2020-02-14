@@ -52,30 +52,41 @@ namespace thunderpeak_receiver
                 log.LogInformation("Calling activity functions...");
             }
 
-            //string jsonMessage = JsonSerializer.Serialize(message, typeof(Message), new JsonSerializerOptions() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-
-            var updatedMessage =
-                await context.CallActivityAsync<Message>(nameof(ProcessMessageActivities.A_StoreRawMessage), message);
-            var ecr =
-                await context.CallActivityAsync<string>(nameof(ProcessMessageActivities.A_FormatMessage), updatedMessage);
-
-            MessageEcrPair messageEcrPair = new MessageEcrPair()
+            try
             {
-                Message = updatedMessage,
-                Ecr = ecr
-            };
+                Message updatedMessage = await context.CallActivityAsync<Message>(nameof(ProcessMessageActivities.A_StoreRawMessage), message);
+                string ecr = await context.CallActivityAsync<string>(nameof(ProcessMessageActivities.A_FormatMessage), updatedMessage);
 
-            var transform =
-                await context.CallActivityAsync<string>(nameof(ProcessMessageActivities.A_FlattenMessage), messageEcrPair);
-            //var formattedStorageLocation =
-            //    await context.CallActivityAsync<string>("A_FormatMessage", message);
+                MessageEcrPair messageEcrPair = new MessageEcrPair()
+                {
+                    Message = updatedMessage,
+                    Ecr = ecr
+                };
 
-            return new
+                string transform = await context.CallActivityAsync<string>(nameof(ProcessMessageActivities.A_FlattenMessage), messageEcrPair);
+
+                return new
+                {
+                    InstanceId = context.InstanceId,
+                };
+
+            }
+            catch (Exception ex)
             {
-                InstanceId = context.InstanceId,
-                //Raw = rawStorageLocation,
-                //Formatted = formattedStorageLocation
-            };
+                if (!context.IsReplaying)
+                {
+                    log.LogInformation($"Caught an exception: {ex.Message}");
+                }
+
+                await context.CallActivityAsync(nameof(ProcessMessageActivities.A_Cleanup), message.Id.ToString());
+
+                return new
+                {
+                    Error = "Failed to process message",
+                    Message = ex.Message,
+                    InstanceId = context.InstanceId,
+                };
+            }
         }
     }
 }

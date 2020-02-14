@@ -26,6 +26,19 @@ namespace thunderpeak_receiver
             }
         }
 
+        public static string ConvertCodeSystemString(string system)
+        {
+            switch (system)
+            {
+                case "SCT":
+                    return "http://snomed.info/sct";
+                case "LN":
+                    return "http://loinc.org";
+                default:
+                    return system;
+            }
+        }
+
         public static (string Format, string ContentType) DetermineContentType(string message)
         {
             string trimmedMessage = message.TrimStart();
