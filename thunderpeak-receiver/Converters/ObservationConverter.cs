@@ -13,8 +13,20 @@ namespace Cdc.Surveillance.Converters
     /// </summary>
     public class ObservationConverter
     {
-        public Observation Convert(Segment segment)
-        {   
+        public (Observation, Practitioner, Organization) Convert(Segment segment)
+        {
+            /* Converts:
+             *  OBX-3
+             *  OBX-5
+             *  OBX-6
+             *  OBX-7
+             *  OBX-8
+             *  OBX-11
+             *  OBX-14
+             *  OBX-17
+             *  OBX-20
+             */
+
             var obx3codeSystem = string.Empty;
             if (segment.Fields(3).Components().Count >= 3)
             {
@@ -31,13 +43,7 @@ namespace Cdc.Surveillance.Converters
                         {
                             Code = segment.Fields(3).Components(1).Value,
                             Display = segment.Fields(3).Components(2).Value,
-                            System = thunderpeak_receiver.Common.ConvertCodeSystemString(obx3codeSystem),
-                            Extension = new List<Extension>() {
-                                new Extension()
-                                {
-                                    Value = new FhirString(obx3codeSystem)
-                                }
-                            }
+                            System = thunderpeak_receiver.Common.ConvertCodeSystemString(obx3codeSystem)
                         }
                     }
                 },
@@ -90,6 +96,14 @@ namespace Cdc.Surveillance.Converters
                     var interpText = interpretationField.Components().Count == 9 ? interpretationField.Components(9).Value : string.Empty;
 
                     observation.Interpretation.Add(new CodeableConcept(interpSys, interpCode, interpName, interpText));
+                }
+                else if (!string.IsNullOrEmpty(interpretationField.Value))
+                {
+                    var interpretationText = interpretationField.Value;
+                    observation.Interpretation.Add(new CodeableConcept()
+                    {
+                        Text = interpretationText
+                    });
                 }
             }
 
@@ -227,9 +241,109 @@ namespace Cdc.Surveillance.Converters
                     // TODO: WARNING, ERROR?
                     break;
             }
-            
-            return observation;
+
+            var practitioner = GetPractitioner(segment);
+            var organization = GetOrganization(segment);
+
+            observation.Performer = new List<ResourceReference>();
+
+            if (!string.IsNullOrEmpty(practitioner.Id))
+            {
+                observation.Performer.Add(new ResourceReference($"practitioner/{practitioner.Id}"));
+            }
+            if (!string.IsNullOrEmpty(organization.Id))
+            {
+                observation.Performer.Add(new ResourceReference($"organization/{organization.Id}"));
+            }
+
+            return (observation, practitioner, organization);
         }
 
+        private Practitioner GetPractitioner(Segment segment)
+        {
+            if (segment.GetAllFields().Count < 25 || string.IsNullOrEmpty(segment.Fields(25).Value))
+            {
+                return new Practitioner();
+            }
+
+            var field = segment.Fields(25);
+            var componentCount = field.Components().Count;
+
+            Practitioner practitioner = new Practitioner()
+            {
+                Id = Guid.NewGuid().ToString(),
+                Identifier = new List<Identifier>()
+                {
+                    new Identifier()
+                    {
+                        Value = field.Components(1).Value,
+                        System = field.Components(9).SubComponents(2).Value
+                    }
+                }
+            };
+
+            practitioner.Name = new List<HumanName>()
+            {
+                new HumanName()
+                {
+                    Text = "${field.Components(6).Value} {field.Components(3).Value} {field.Components(2).Value} {field.Components(5).Value}".Trim(),
+                    Given = new List<string>() { field.Components(3).Value },
+                    Family = field.Components(2).Value,
+                    Suffix = new List<string>() { field.Components(5).Value },
+                    Prefix = new List<string>() { field.Components(6).Value },
+                }
+            };
+
+            return practitioner;
+        }
+
+        private Organization GetOrganization(Segment segment)
+        {
+            int totalFields = segment.GetAllFields().Count;
+            if (totalFields < 23 || string.IsNullOrEmpty(segment.Fields(23).Value))
+            {
+                return new Organization();
+            }
+
+            Organization organization = new Organization()
+            {
+                Id = Guid.NewGuid().ToString()
+            };
+
+            organization.Name = segment.Fields(23).Components(1).Value;
+            organization.Address = new List<Address>() { GetOrganizationAddress(segment) };
+
+            return organization;
+        }
+
+        private Address GetOrganizationAddress(Segment segment)
+        {
+            Address address = new Address();
+
+            int totalFields = segment.GetAllFields().Count;
+            if (totalFields < 24)
+            {
+                return address;
+            }
+
+            var field = segment.Fields(24);
+            var componentCount = field.Components().Count;
+
+            address.City = componentCount >= 3 ? field.Components(3).Value : string.Empty;
+            address.District = componentCount >= 4 ? field.Components(4).Value : string.Empty;
+            address.PostalCode = componentCount >= 5 ? field.Components(5).Value : string.Empty;
+
+            if (componentCount >= 1)
+            {
+                List<string> lines = new List<string>();
+                foreach (var subComponent in field.Components(1).SubComponents())
+                {
+                    lines.Add(subComponent.Value);
+                }
+                address.Line = lines;
+            }
+
+            return address;
+        }
     }
 }

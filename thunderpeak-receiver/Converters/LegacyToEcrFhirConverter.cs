@@ -13,8 +13,11 @@ namespace Cdc.Surveillance.Converters
     /// </summary>
     public class EcrFhirConverter : IFhirConverter<Bundle>
     {
+        #region Private Members
         private readonly List<string> _obxIdsToExclude = new List<string>() { "78746-5", "21842-0", };
+        #endregion // Private Members
 
+        #region Public API
         /// <summary>
         /// Converts a CDC case notification message from HL7 v2.5.1 ORU_R01 to a FHIR (R4) eICR
         /// </summary>
@@ -29,7 +32,9 @@ namespace Cdc.Surveillance.Converters
 
             return bundle;
         }
+        #endregion // Public API
 
+        #region Private Methods
         /// <summary>
         /// Converts specific parts of the HL7v2 message into a FHIR resource representing a CDC case notification
         /// </summary>
@@ -37,7 +42,8 @@ namespace Cdc.Surveillance.Converters
         /// <returns>FHIR resource representing a CDC initial case notification</returns>
         private Bundle ConvertEcr(Message message, string processId)
         {
-            var caseId = message.Segments("OBR")[0].Fields(3).Value;
+            var obrSegment = message.Segments("OBR")[0];
+            var caseId = obrSegment.Fields(3).Value;
 
             var bundle = new Bundle()
             {
@@ -70,7 +76,13 @@ namespace Cdc.Surveillance.Converters
                 var observationSection = new Composition.SectionComponent();
                 observationSection.Text = new Narrative();
 
-                var observations = ConvertObservations(message);
+                var practitionerSection = new Composition.SectionComponent();
+                practitionerSection.Text = new Narrative();
+
+                var organizationSection = new Composition.SectionComponent();
+                organizationSection.Text = new Narrative();
+
+                var (observations, practitioners, organizations) = ConvertObservations(message);
 
                 foreach (var observation in observations)
                 {
@@ -81,6 +93,26 @@ namespace Cdc.Surveillance.Converters
                     bundle.Entry.Add(observationEntry);
                 }
                 composition.Section.Add(observationSection);
+
+                foreach (var practitioner in practitioners)
+                {
+                    practitionerSection.Entry.Add(new ResourceReference("TODO: Add ref to " + practitioner.Id));
+
+                    var practitionerEntry = new Bundle.EntryComponent();
+                    practitionerEntry.Resource = practitioner;
+                    bundle.Entry.Add(practitionerEntry);
+                }
+                composition.Section.Add(practitionerSection);
+
+                foreach (var organization in organizations)
+                {
+                    organizationSection.Entry.Add(new ResourceReference("TODO: Add ref to " + organization.Id));
+
+                    var organizationEntry = new Bundle.EntryComponent();
+                    organizationEntry.Resource = organization;
+                    bundle.Entry.Add(organizationEntry);
+                }
+                composition.Section.Add(organizationSection);
 
                 entry1.Resource = composition;
                 bundle.Entry.Add(entry1);
@@ -94,14 +126,25 @@ namespace Cdc.Surveillance.Converters
                 entry2.Resource = patient;
                 bundle.Entry.Add(entry2);
             }
+
+            // add the condition resource
+            {
+                var entry3 = new Bundle.EntryComponent();
+
+                var condition = new ConditionConverter().Convert(message, patientIdentifier);
+                entry3.Resource = condition;
+                bundle.Entry.Add(entry3);
+            }
             return bundle;
         }
 
-        private List<Observation> ConvertObservations(Message message)
+        private (List<Observation>, List<Practitioner>, List<Organization>) ConvertObservations(Message message)
         {
             var segments = message.Segments();
 
             List<Observation> observations = new List<Observation>();
+            List<Practitioner> practitioners = new List<Practitioner>();
+            List<Organization> organizations = new List<Organization>();
 
             foreach (var segment in segments)
             {
@@ -113,12 +156,22 @@ namespace Cdc.Surveillance.Converters
                 else if (segment.Name.Equals("OBX", StringComparison.OrdinalIgnoreCase))
                 {
                     var obsConverter = new ObservationConverter();
-                    var observation = obsConverter.Convert(segment);
+                    var (observation, practitioner, organization) = obsConverter.Convert(segment);
+                    
                     observations.Add(observation);
+
+                    if (!string.IsNullOrEmpty(practitioner.Id))
+                    {
+                        practitioners.Add(practitioner);
+                    }
+                    if (!string.IsNullOrEmpty(organization.Id))
+                    {
+                        organizations.Add(organization);
+                    }
                 }
             }
 
-            return observations;
+            return (observations, practitioners, organizations);
         }
 
         private ObxTriplet GetOBXFieldValueFromV2Message(Message message, string obx3)
@@ -146,25 +199,6 @@ namespace Cdc.Surveillance.Converters
                 default:
                     return new ObxTriplet(obxSegment.Fields(5).Value, obxSegment.Fields(5).Value, obxSegment.Fields(5).Value, obx3);
             }
-        }
-
-        [DebuggerDisplay("{Obx3} = {Code} : {Text}")] // see https://docs.microsoft.com/en-us/dotnet/framework/debug-trace-profile/enhancing-debugging-with-the-debugger-display-attributes for how to use DebuggerDisplay
-        private class ObxTriplet
-        {
-            public ObxTriplet() { }
-
-            public ObxTriplet(string code, string text, string system, string obx3)
-            {
-                Code = code;
-                Text = text;
-                System = system;
-                Obx3 = obx3;
-            }
-
-            public string Obx3 { get; set; } = string.Empty;
-            public string Code { get; set; } = string.Empty;
-            public string Text { get; set; } = string.Empty;
-            public string System { get; set; } = string.Empty;
         }
 
         private Dictionary<int, List<ObxTriplet>> GetOBXRepeatingFieldValuesFromV2Message(Message message, List<string> obx3s)
@@ -237,6 +271,7 @@ namespace Cdc.Surveillance.Converters
             patientIdentifier.Value = identifier;
             patient.Identifier.Add(patientIdentifier);
 
+            #region Address
             var address = new Address();
             address.State = message.Segments("PID")[0].Fields(11).Components(4).Value;
             address.City = message.Segments("PID")[0].Fields(11).Components(3).Value;
@@ -244,7 +279,9 @@ namespace Cdc.Surveillance.Converters
             address.Country = message.Segments("PID")[0].Fields(11).Components(6).Value;
             address.District = message.Segments("PID")[0].Fields(11).Components(9).Value;
             patient.Address.Add(address);
+            #endregion // Address
 
+            #region Gender
             var v2gender = message.Segments("PID")[0].Fields(8).Value;
 
             var res = v2gender switch
@@ -255,6 +292,7 @@ namespace Cdc.Surveillance.Converters
                 "O" => patient.Gender = AdministrativeGender.Other,
                 _ => patient.Gender = null
             };
+            #endregion // Gender
 
             #region Race Extension - us-core-race
             var race = ConvertRace(message);
@@ -271,10 +309,15 @@ namespace Cdc.Surveillance.Converters
             patient.Extension.Add(birthPlace);
             #endregion
 
-            patient.BirthDateElement = ConvertDate(message.Segments("PID")[0].Fields(7).Value);
-
-            patient.Deceased = ConvertDateTime(message.Segments("PID")[0].Fields(29).Value);
-
+            if (message.Segments("PID")[0].GetAllFields().Count >= 7)
+            {
+                patient.BirthDateElement = ConvertDate(message.Segments("PID")[0].Fields(7).Value);
+            }
+            
+            if (message.Segments("PID")[0].GetAllFields().Count >= 29)
+            {
+                patient.Deceased = ConvertDateTime(message.Segments("PID")[0].Fields(29).Value);
+            }
             Redact(patient);
 
             return patient;
@@ -419,5 +462,28 @@ namespace Cdc.Surveillance.Converters
 
             return birthPlace;
         }
+        #endregion // Private Methods
+
+
+        #region Private classes
+        [DebuggerDisplay("{Obx3} = {Code} : {Text}")] // see https://docs.microsoft.com/en-us/dotnet/framework/debug-trace-profile/enhancing-debugging-with-the-debugger-display-attributes for how to use DebuggerDisplay
+        private class ObxTriplet
+        {
+            public ObxTriplet() { }
+
+            public ObxTriplet(string code, string text, string system, string obx3)
+            {
+                Code = code;
+                Text = text;
+                System = system;
+                Obx3 = obx3;
+            }
+
+            public string Obx3 { get; set; } = string.Empty;
+            public string Code { get; set; } = string.Empty;
+            public string Text { get; set; } = string.Empty;
+            public string System { get; set; } = string.Empty;
+        }
+        #endregion // Private classes
     }
 }
